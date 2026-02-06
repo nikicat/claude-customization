@@ -13,27 +13,26 @@ touch "$TRANSCRIPT_PATH"
 MOCK_BIN="$TEMP_DIR/bin"
 mkdir -p "$MOCK_BIN"
 MOCK_NOTIFY_ID=1000
-cat > "$MOCK_BIN/notify-send" <<'MOCK'
+COUNTER_FILE="$TEMP_DIR/mock-notify-counter"
+cat > "$MOCK_BIN/notify-send" <<MOCK
 #!/bin/bash
-echo "[notify-send] $*" >&2
+echo "[notify-send] \$*" >&2
 # If -p flag present, output an incrementing ID (simulates real behavior)
-for arg in "$@"; do
-    if [ "$arg" = "-p" ]; then
+for arg in "\$@"; do
+    if [ "\$arg" = "-p" ]; then
         # Use a counter file to increment IDs
-        COUNTER_FILE="/tmp/mock-notify-counter"
         if [ -f "$COUNTER_FILE" ]; then
-            ID=$(cat "$COUNTER_FILE")
+            ID=\$(cat "$COUNTER_FILE")
         else
             ID=1000
         fi
-        echo $((ID + 1)) > "$COUNTER_FILE"
-        echo "$ID"
+        echo \$((ID + 1)) > "$COUNTER_FILE"
+        echo "\$ID"
         break
     fi
 done
 MOCK
 chmod +x "$MOCK_BIN/notify-send"
-rm -f /tmp/mock-notify-counter
 
 # Prepend mock to PATH
 export PATH="$MOCK_BIN:$PATH"
