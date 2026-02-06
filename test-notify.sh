@@ -72,6 +72,18 @@ echo "Session: $SESSION_ID"
 echo "CWD: $CWD"
 echo
 
+# Test 0: Non-existent transcript directory (should not fail)
+echo "--- Test: Non-existent transcript directory ---"
+NONEXISTENT_DIR="$TEMP_DIR/new-session-dir"
+json="{\"hook_event_name\": \"UserPromptSubmit\", \"transcript_path\": \"$NONEXISTENT_DIR/transcript.json\", \"session_id\": \"test\", \"cwd\": \"/tmp\"}"
+echo "=== UserPromptSubmit (non-existent directory) ==="
+if echo "$json" | "$NOTIFY_SCRIPT" 2>&1; then
+    echo "PASS: Script handled non-existent directory"
+else
+    echo "FAIL: Script crashed on non-existent directory (exit code: $?)"
+fi
+echo
+
 # Test 1: Submit, wait, Stop (should notify)
 echo "--- Test: Response ready notification ---"
 send_event "UserPromptSubmit"

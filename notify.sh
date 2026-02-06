@@ -54,6 +54,7 @@ send_notify() {
 
 case "$EVENT" in
     UserPromptSubmit)
+        mkdir -p "$SESSION_DIR"
         touch "$MARKER_FILE"
         ;;
 
