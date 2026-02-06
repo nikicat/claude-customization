@@ -13,9 +13,12 @@ set -e
 INPUT=$(cat)
 EVENT=$(echo "$INPUT" | jq -r '.hook_event_name')
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path')
-MARKER_FILE="$(dirname "$TRANSCRIPT_PATH")/.prompt-start"
+CWD=$(echo "$INPUT" | jq -r '.cwd')
+SESSION_DIR="$(dirname "$TRANSCRIPT_PATH")"
+MARKER_FILE="$SESSION_DIR/.prompt-start"
+NOTIFY_ID_FILE="$SESSION_DIR/.notify-id"
 
-DELAY_THRESHOLD=15  # Only notify if response took >15 seconds
+DELAY_THRESHOLD="${DELAY_THRESHOLD:-15}"  # Only notify if response took >N seconds
 
 # Returns 0 if threshold passed, 1 otherwise. Sets $elapsed.
 check_threshold() {
@@ -26,6 +29,29 @@ check_threshold() {
     [ "$elapsed" -gt "$DELAY_THRESHOLD" ]
 }
 
+# Get short project name from cwd (last component of path)
+project_name() {
+    basename "$CWD"
+}
+
+# Send notification, replacing previous if exists. Stores new ID for next time.
+send_notify() {
+    local urgency="$1"
+    local title="$2"
+    local body="$3"
+    local args=(-p)
+
+    # Replace previous notification if we have its ID
+    if [ -f "$NOTIFY_ID_FILE" ]; then
+        args+=(-r "$(cat "$NOTIFY_ID_FILE")")
+    fi
+
+    [ -n "$urgency" ] && args+=(-u "$urgency")
+
+    # Send and capture new notification ID
+    notify-send "${args[@]}" "$title" "$body" > "$NOTIFY_ID_FILE"
+}
+
 case "$EVENT" in
     UserPromptSubmit)
         touch "$MARKER_FILE"
@@ -33,7 +59,7 @@ case "$EVENT" in
 
     Stop)
         if check_threshold; then
-            notify-send "Claude" "Response ready (${elapsed}s)"
+            send_notify "" "Claude [$(project_name)]" "Response ready (${elapsed}s)"
         fi
         rm -f "$MARKER_FILE"
         ;;
@@ -43,13 +69,13 @@ case "$EVENT" in
             notify_type=$(echo "$INPUT" | jq -r '.notification_type // "unknown"')
             case "$notify_type" in
                 permission_prompt)
-                    notify-send -u critical "Claude" "Permission required"
+                    send_notify "critical" "Claude [$(project_name)]" "Permission required"
                     ;;
                 idle_prompt)
-                    notify-send "Claude" "Waiting for input"
+                    send_notify "" "Claude [$(project_name)]" "Waiting for input"
                     ;;
                 *)
-                    notify-send "Claude" "Notification: $notify_type"
+                    send_notify "" "Claude [$(project_name)]" "Notification: $notify_type"
                     ;;
             esac
         fi

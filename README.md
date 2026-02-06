@@ -44,7 +44,9 @@ When Claude takes a while to respond, you switch to another window and miss when
 
 ## Solution: Notification Hooks
 
-1. Copy [`notify.sh`](./notify.sh) to `~/.claude/hooks/notify.sh`
+1. Install the hook script (choose one):
+   - **Copy:** `cp notify.sh ~/.claude/hooks/notify.sh`
+   - **Symlink:** `ln -s "$(pwd)/notify.sh" ~/.claude/hooks/notify.sh` (easier updates)
 2. Make executable: `chmod +x ~/.claude/hooks/notify.sh`
 3. Configure hooks in `~/.claude/settings.json`:
 
