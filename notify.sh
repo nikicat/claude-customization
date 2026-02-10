@@ -1,6 +1,7 @@
 #!/bin/bash
 # Claude Code notification helper
-# Notifies when responses are ready or attention is needed (Linux, uses notify-send)
+# Debounced: only notifies after DEBOUNCE_SECONDS of silence, and only if
+# the response took longer than DELAY_THRESHOLD seconds. (Linux, uses notify-send)
 #
 # Install: Copy to ~/.claude/hooks/notify.sh and chmod +x
 # Configure in ~/.claude/settings.json (see README.md)
@@ -17,8 +18,10 @@ CWD=$(echo "$INPUT" | jq -r '.cwd')
 SESSION_DIR="$(dirname "$TRANSCRIPT_PATH")"
 MARKER_FILE="$SESSION_DIR/.prompt-start"
 NOTIFY_ID_FILE="$SESSION_DIR/.notify-id"
+PENDING_PID_FILE="$SESSION_DIR/.notify-pending-pid"
 
 DELAY_THRESHOLD="${DELAY_THRESHOLD:-15}"  # Only notify if response took >N seconds
+DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-15}"  # Wait for silence before sending
 
 # Returns 0 if threshold passed, 1 otherwise. Sets $elapsed.
 check_threshold() {
@@ -36,31 +39,44 @@ project_name() {
 
 # Send notification, replacing previous if exists. Stores new ID for next time.
 send_notify() {
-    local urgency="$1"
-    local title="$2"
-    local body="$3"
+    local urgency="$1" title="$2" body="$3"
     local args=(-p)
-
-    # Replace previous notification if we have its ID
-    if [ -f "$NOTIFY_ID_FILE" ]; then
-        args+=(-r "$(cat "$NOTIFY_ID_FILE")")
-    fi
-
+    [ -f "$NOTIFY_ID_FILE" ] && args+=(-r "$(cat "$NOTIFY_ID_FILE")")
     [ -n "$urgency" ] && args+=(-u "$urgency")
-
-    # Send and capture new notification ID
     notify-send "${args[@]}" "$title" "$body" > "$NOTIFY_ID_FILE"
+}
+
+# Cancel any pending debounced notification
+cancel_pending() {
+    if [ -f "$PENDING_PID_FILE" ]; then
+        kill "$(cat "$PENDING_PID_FILE")" 2>/dev/null || true
+        rm -f "$PENDING_PID_FILE"
+    fi
+}
+
+# Schedule a notification after DEBOUNCE_SECONDS of silence
+schedule_notify() {
+    local urgency="$1" title="$2" body="$3"
+    cancel_pending
+    (
+        sleep "$DEBOUNCE_SECONDS"
+        send_notify "$urgency" "$title" "$body"
+        rm -f "$PENDING_PID_FILE"
+    ) &
+    disown $!
+    echo $! > "$PENDING_PID_FILE"
 }
 
 case "$EVENT" in
     UserPromptSubmit)
         mkdir -p "$SESSION_DIR"
         touch "$MARKER_FILE"
+        cancel_pending
         ;;
 
     Stop)
         if check_threshold; then
-            send_notify "" "Claude [$(project_name)]" "Response ready (${elapsed}s)"
+            schedule_notify "" "Claude [$(project_name)]" "Response ready (${elapsed}s)"
         fi
         rm -f "$MARKER_FILE"
         ;;
@@ -70,13 +86,13 @@ case "$EVENT" in
             notify_type=$(echo "$INPUT" | jq -r '.notification_type // "unknown"')
             case "$notify_type" in
                 permission_prompt)
-                    send_notify "critical" "Claude [$(project_name)]" "Permission required"
+                    schedule_notify "critical" "Claude [$(project_name)]" "Permission required"
                     ;;
                 idle_prompt)
-                    send_notify "" "Claude [$(project_name)]" "Waiting for input"
+                    schedule_notify "" "Claude [$(project_name)]" "Waiting for input"
                     ;;
                 *)
-                    send_notify "" "Claude [$(project_name)]" "Notification: $notify_type"
+                    schedule_notify "" "Claude [$(project_name)]" "Notification: $notify_type"
                     ;;
             esac
         fi
