@@ -62,7 +62,7 @@ schedule_notify() {
         sleep "$DEBOUNCE_SECONDS"
         send_notify "$urgency" "$title" "$body"
         rm -f "$PENDING_PID_FILE"
-    ) &
+    ) </dev/null >/dev/null 2>&1 &  # detach stdio so hook exits immediately
     disown $!
     echo $! > "$PENDING_PID_FILE"
 }
